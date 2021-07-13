@@ -7,8 +7,8 @@
 
 .NOTES
     Filename: CollectAllLogs.ps1
-    Version: 1.0
-    Author: Russ Rimmerman, David Anderson
+    Version: 1.2
+    Author: Russ Rimmerman, David Anderson, Jay Connor
 
     Version history:
     1.0 - Script created
