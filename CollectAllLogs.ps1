@@ -12,6 +12,8 @@
 
     Version history:
     1.0 - Script created
+    1.1 - Modified cert logic to used ID and not require a subject name - JC
+    1.2 - Moved DLL Folder to web root, fixed typo, removed timeVar - JC
 
 .LINKS
     The Readme can be located: https://github.com/russrimm/CollectAllLogs/blob/1.0/README.md
@@ -29,12 +31,14 @@ $GatherEdgeUpdateLogs = 'Yes'
 $GatherLogsRelatedToWindowsServicing = 'Yes'
 $GatherOneDriveLogs = 'Yes'
 $GatherSetupDiagLogs = 'Yes'
-$SendStatusMessage = 'Yes'
 $DumpSystemEventLog = 'Yes'
 $DumpSystemAppLog = 'Yes'
 $GatherSepExclusions = 'No'
 $GatherMDMDiagnostics = 'Yes'
 $SentstatusMessage = 'No'
+
+
+$SendStatusMessage = 'Yes'
 
 
 $UploadedClientLogs = $False
@@ -43,7 +47,7 @@ $MP = $null
 $HttpMode = $null
 $ClientCommunicationMode = $null
 $NumericDate = Get-Date -uFormat "%m%d%Y%H%MS"            
-$UplodadFileName = "$env:ComputerName-$numericdate.zip"
+$UploadedFileName = "$env:ComputerName-$numericdate.zip"
 $CCMLogdirectory = Get-ItemProperty -Path HKLM:\Software\Microsoft\CCM\Logging\@global -Name LogDirectory | Select-Object LogDirectory -ExpandProperty LogDirectory 
 $CCMTempDir = Get-ItemProperty -Path HKLM:\Software\Microsoft\CCM -Name TempDir | Select-Object TempDir -ExpandProperty TempDir           
 $LogsZip = $CCMTempDir + "logs.zip"
@@ -67,7 +71,7 @@ function BuildAndSend-Registration {
     $Script:httpsender = New-Object Microsoft.ConfigurationManagement.Messaging.Sender.Ccm.CcmSender
 
     # Rolling the time back to account for the default time zone in PE being Pacific
-    $ThreeHoursAgoInWmiDateTimeFormat = [System.Management.ManagementDateTimeConverter]::ToDmtfDateTime($(Get-Date).AddHours(-5))
+   # $ThreeHoursAgoInWmiDateTimeFormat = [System.Management.ManagementDateTimeConverter]::ToDmtfDateTime($(Get-Date).AddHours(-5))
 
     $UnknownStatusMessage = New-Object Microsoft.ConfigurationManagement.Messaging.StatusMessages.UnknownStatusMessage
     $UnknownStatusMessage.ModuleName = 'CCMLogGatherer'
@@ -188,6 +192,8 @@ If (($ClientCommunicationMode -eq 4) -or ($ClientCommunicationMode -eq 3)) {
 }
 
 $Destination = "$HttpMode$MP/ccm_Incoming"
+
+$mpurl = "$HttpMode$MP"
 
 If (Test-Path -Path $CCMFilestoZip) {
     Remove-Item -Recurse -Force $CCMFilestoZip
@@ -537,20 +543,21 @@ If ($HttpMode -eq "http://") {
             #File already exists do not download again
         }
         Else {
-            Start-BitsTransfer -Source $destination\MessagingDLL\Microsoft.ConfigurationManagement.Messaging.dll -Destination "$CCMTempDir\Microsoft.ConfigurationManagement.Messaging.dll" -TransferType Download | Out-Null
+            Start-BitsTransfer -Source $mpurl/MessagingDLL\Microsoft.ConfigurationManagement.Messaging.dll -Destination "$CCMTempDir\Microsoft.ConfigurationManagement.Messaging.dll" -TransferType Download | Out-Null
+            
         }
     }
     #End code for Status Message trigger
-    Start-BitsTransfer -Source $LogsZip -Destination "$destination\$UplodadFileName" -TransferType Upload  # use this instead of what is below if SSL is not required 
+    Start-BitsTransfer -Source $LogsZip -Destination "$destination\$UploadedFileName" -TransferType Upload  # use this instead of what is below if SSL is not required 
     $UploadedClientLogs = $true
-    # write-host "Uploaded Client Logs to $destination/$UplodadFileName"
+    write-host "Uploaded Client Logs to $destination/$UploadedFileName"
 }
 
 Else {
     #MP is using https and needs a cert attached for any BITS jobs
-    $Cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -Like "*$env:ComputerName*" -and $_.NotAfter -gt (Get-Date) -and $_.EnhancedKeyUsageList.ObjectId -eq "1.3.6.1.5.5.7.3.2" }
+    $Cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.NotAfter -gt (Get-Date) -and $_.EnhancedKeyUsageList.ObjectId -eq "1.3.6.1.5.5.7.3.2" }
     If ($Cert.Count -gt 1) { $Cert = $Cert[0] }
-    $CertSubjectName = $Cert.Subject -Replace "(CN=)(.*?),.*", '$2' 
+    $CertID = $cert.GetCertHashString()
 
 
     $OSversion = (Get-WmiObject -Namespace Root\Cimv2 -Class Win32_OperatingSystem).Version
@@ -569,20 +576,20 @@ Else {
             #Code for Status Message trigger if desired to get Microsoft.ConfigurationManagement.Messaging.dll
             If (!(Test-Path -Path "$CCMTempDir\Microsoft.ConfigurationManagement.Messaging.dll")) {
                 $DownloadJob = "DllDownload"
-                $DownloadMessagingDLLBitsJob = Start-BitsTransfer -DisplayName $DownloadJob -Suspended -TransferType Download -Source $Destination\MessagingDLL\Microsoft.ConfigurationManagement.Messaging.dll -Destination  "$CCMTempDir\Microsoft.ConfigurationManagement.Messaging.dll"
+                $DownloadMessagingDLLBitsJob = Start-BitsTransfer -DisplayName $DownloadJob -Suspended -TransferType Download -Source "$mpurl/MessagingDLL\Microsoft.ConfigurationManagement.Messaging.dll" -Destination  "$CCMTempDir\Microsoft.ConfigurationManagement.Messaging.dll"
 
-                BitsAdmin /setclientCertificatebyName $DownloadJob 2 My $CertSubjectName | Out-Null #Using BitsAdmin to attach cert because can't do it with PowerShell Cmdlet
+                BitsAdmin /setclientCertificatebyID $DownloadJob 2 My $CertID | Out-Null #Using BitsAdmin to attach cert because can't do it with PowerShell Cmdlet
                 Resume-BitsTransfer -BitsJob $DownloadMessagingDLLBitsJob
             }
             #End code for Status Message trigger
         }
 
         $BitsJobName = "$env:ComputerName-$numericdate.zip"
-        $BitsJob = Start-BitsTransfer -DisplayName $BitsJobName -Source $LogsZip -Destination "$destination\$UplodadFileName" -TransferType Upload -Suspended
-        BitsAdmin /setclientCertificatebyName $BitsJobName 2 MY $CertSubjectName | Out-Null #Using BitsAdmin to attach cert because can't do it with PowerShell Cmdlet
+        $BitsJob = Start-BitsTransfer -DisplayName $BitsJobName -Source $LogsZip -Destination "$destination\$UploadedFileName" -TransferType Upload -Suspended
+        BitsAdmin /setclientCertificatebyID $BitsJobName 2 MY $CertID | Out-Null #Using BitsAdmin to attach cert because can't do it with PowerShell Cmdlet
         Resume-BitsTransfer -BitsJob $BitsJob
         $UploadedClientLogs = $true
-        # write-host "Uploaded Client Logs to $destination/$UplodadFileName"
+        write-host "Uploaded Client Logs to $destination/$UploadedFileName"
     }
     Else {
         Write-Host "Unable to find Certificate to attach to BITS job Aborting"
@@ -591,10 +598,10 @@ Else {
 }
 
 if ($SendStatusMessage -eq 'Yes') {
-    $SentstatusMessage = BuildAndSend-Registration -ManagementPointHostName $MP -MsgId 1234 -InsString1 $MP -InsString2 $UplodadFileName  -InsString3 "Insstring3"  -InsString4 "Insstring4"  -InsString5 "Insstring5"  -InsString6 "Insstring6"
+    $SentstatusMessage = BuildAndSend-Registration -ManagementPointHostName $MP -MsgId 1234 -InsString1 $MP -InsString2 $UploadedFileName  -InsString3 "Insstring3"  -InsString4 "Insstring4"  -InsString5 "Insstring5"  -InsString6 "Insstring6"
 }
 
 
 
 If ($UploadedClientLogs = $true)
-{ Write-Host "Uploaded Client Logs to $destination/$UplodadFileName and sent Status Message $SentstatusMessage" }
+{ Write-Host "Uploaded Client Logs to $destination/$UploadedFileName and sent Status Message $SentstatusMessage" }
