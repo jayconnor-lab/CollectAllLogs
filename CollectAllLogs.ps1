@@ -14,6 +14,7 @@
     1.0 - Script created
     1.1 - Modified cert logic to used ID and not require a subject name - JC
     1.2 - Moved DLL Folder to web root, fixed typo, removed timeVar - JC
+    1.3 - Removed S from NumericDate - JC
 
 .LINKS
     The Readme can be located: https://github.com/jayconnor-lab/CollectAllLogs/blob/1.0/README.md
@@ -46,7 +47,7 @@ $UploadedClientLogs = $False
 $MP = $null
 $HttpMode = $null
 $ClientCommunicationMode = $null
-$NumericDate = Get-Date -uFormat "%m%d%Y%H%MS"            
+$NumericDate = Get-Date -uFormat "%m%d%Y%H%M"            
 $UploadedFileName = "$env:ComputerName-$numericdate.zip"
 $CCMLogdirectory = Get-ItemProperty -Path HKLM:\Software\Microsoft\CCM\Logging\@global -Name LogDirectory | Select-Object LogDirectory -ExpandProperty LogDirectory 
 $CCMTempDir = Get-ItemProperty -Path HKLM:\Software\Microsoft\CCM -Name TempDir | Select-Object TempDir -ExpandProperty TempDir           
