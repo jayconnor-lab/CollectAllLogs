@@ -16,7 +16,7 @@
     1.2 - Moved DLL Folder to web root, fixed typo, removed timeVar - JC
 
 .LINKS
-    The Readme can be located: https://github.com/russrimm/CollectAllLogs/blob/1.0/README.md
+    The Readme can be located: https://github.com/jayconnor-lab/CollectAllLogs/blob/1.0/README.md
 
 .CREDIT    
     This script was developed in a collaborative effort by Microsoft Customer Engineers Russ Rimmerman and David Anderson.
